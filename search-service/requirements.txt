@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+bm25s
+PyStemmer
+pytest
+httpx
