@@ -126,6 +126,8 @@ export default function LoginPage() {
                 <LogIn className="mr-2" /> Sign in with Google
               </Button>
 
+
+
               {/* Divider */}
               <div className="flex items-center gap-3 py-2">
                 <div className="h-px flex-1 bg-border" />
@@ -211,4 +213,7 @@ export default function LoginPage() {
       )}
     </div>
   )
+
+  
+  
 }
