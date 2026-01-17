@@ -42,6 +42,8 @@ from .models import (
     SearchResponse,
     SearchResult,
     UpdateDocumentChunk,
+    UserProfile,
+    UpsertMeRequest,
 )
 from .index import BM25Index
 from .auth import get_current_user
@@ -65,12 +67,61 @@ app.include_router(health_router)
 # In-memory storage for course indices
 # In a production environment, you'd use a persistent database.
 course_indices: Dict[str, BM25Index] = {}
+global_index = BM25Index()
+user_profiles: Dict[str, UserProfile] = {}
+
+@app.get("/v1/users/me", response_model=UserProfile)
+def get_me(current_user: dict = Depends(get_current_user)):
+    uid = current_user["uid"]
+    return user_profiles.get(uid) or UserProfile(uid=uid, role=current_user.get("role", "student"))
+
+
+@app.post("/v1/users/me", response_model=UserProfile)
+def upsert_me(payload: UpsertMeRequest, current_user: dict = Depends(get_current_user)):
+    uid = current_user["uid"]
+    existing = user_profiles.get(uid) or UserProfile(uid=uid, role=current_user.get("role", "student"))
+
+    data = payload.model_dump(exclude_unset=True)
+    updated = existing.model_copy(update={
+        **data,
+        "uid": uid,
+        # keep token role as fallback if role not sent
+        "role": data.get("role", existing.role),
+        "updated_at": datetime.utcnow().isoformat()
+    })
+
+    user_profiles[uid] = updated
+    return updated
+
 
 
 def get_course_index(course_id: str) -> BM25Index:
     if course_id not in course_indices:
         course_indices[course_id] = BM25Index()
     return course_indices[course_id]
+
+def get_allowed_course_ids(current_user: dict) -> Optional[set[str]]:
+    """
+    Returns:
+      - None => no filtering (teacher)
+      - set([...]) => allowed course ids
+    Raises:
+      - 403 if student has no selected courses
+    """
+    if current_user.get("role") == "teacher":
+        return None
+
+    uid = current_user["uid"]
+    profile = user_profiles.get(uid)
+
+    if not profile or not profile.courses:
+        raise HTTPException(
+            status_code=403,
+            detail="No courses selected. Complete onboarding first."
+        )
+
+    return set(profile.courses)
+
 
 
 @app.post("/v1/courses/{course_id}/documents:batchCreate", response_model=BatchCreateResponse)
@@ -84,9 +135,45 @@ def batch_create(
     for doc in request.documents:
         doc.course_id = course_id
         index.upsert(doc)
+        global_index.upsert(doc)
         created_documents.append(doc)
     return BatchCreateResponse(documents=created_documents)
 
+@app.post("/v1/documents:search", response_model=SearchResponse)
+def search_all_courses(
+    request: SearchRequest,
+    current_user: dict = Depends(get_current_user),
+):
+
+    allowed = get_allowed_course_ids(current_user)
+
+    # pull more than page_size so filtering still leaves enough results
+    raw = global_index.search(query=request.query, k=request.page_size * 5)
+
+    if allowed is not None:
+        raw = [(doc, score) for (doc, score) in raw if doc.course_id in allowed]
+
+    results = raw[: request.page_size]
+
+    search_results = [
+        SearchResult(
+            id=doc.id,
+            score=score,
+            course_id=doc.course_id,
+            source=doc.source,
+            chunk_index=doc.chunk_index,
+            title=doc.title,
+            snippet=doc.content[:200],
+            metadata=doc.metadata,
+        )
+        for doc, score in results
+    ]
+
+    return SearchResponse(
+        query=request.query,
+        mode=request.mode,
+        results=search_results,
+    )
 
 @app.post("/v1/courses/{course_id}/documents:search", response_model=SearchResponse)
 def search(
@@ -137,6 +224,7 @@ def update_document(
     updated_doc.updated_at = datetime.utcnow().isoformat()
 
     index.upsert(updated_doc)
+    global_index.upsert(updated_doc)
 
     return updated_doc
 
@@ -153,6 +241,7 @@ def delete_document(
         raise HTTPException(status_code=404, detail="Document not found")
 
     index.delete(document_id)
+    global_index.delete(document_id)
 
     return None
 
@@ -194,6 +283,41 @@ def rag_search(
     """
     index = get_course_index(course_id)
     results = index.search(query=request.query, k=request.page_size)
+
+    rag_results = [
+        RagSearchResult(
+            id=doc.id,
+            score=score,
+            course_id=doc.course_id,
+            source=doc.source,
+            chunk_index=doc.chunk_index,
+            title=doc.title,
+            content=doc.content,
+            metadata=doc.metadata,
+        )
+        for doc, score in results
+    ]
+
+    return RagSearchResponse(
+        query=request.query,
+        mode=request.mode,
+        results=rag_results,
+    )
+
+@app.post("/v1/documents:ragSearch", response_model=RagSearchResponse)
+def rag_search_all_courses(
+    request: SearchRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    allowed = get_allowed_course_ids(current_user)
+
+    # pull more than page_size so filtering still leaves enough results
+    raw = global_index.search(query=request.query, k=request.page_size * 5)
+
+    if allowed is not None:
+        raw = [(doc, score) for (doc, score) in raw if doc.course_id in allowed]
+
+    results = raw[: request.page_size]
 
     rag_results = [
         RagSearchResult(

@@ -53,3 +53,15 @@ class UpdateDocumentChunk(BaseModel):
     headings: Optional[List[str]] = None
     content: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class UserProfile(BaseModel):
+    uid: str
+    role: str = "student"
+    department: Optional[str] = None
+    courses: List[str] = Field(default_factory=list)  # course_ids
+    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+class UpsertMeRequest(BaseModel):
+    role: Optional[str] = None
+    department: Optional[str] = None
+    courses: Optional[List[str]] = None
