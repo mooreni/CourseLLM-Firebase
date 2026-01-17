@@ -12,8 +12,9 @@ import { SearchResult } from './types';
 
 export default function SearchPage() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, firebaseUser, user } = useAuth() as any; // support either name
   const searchParams = useSearchParams();
+
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [courseId, setCourseId] = useState(searchParams.get('courseId') || '');
   const [type, setType] = useState(searchParams.get('type') || 'all');
@@ -31,23 +32,38 @@ export default function SearchPage() {
   }, [query, courseId, type, topK, router]);
 
   const handleSearch = async () => {
-    if (query.length < 2) {
+    if (query.trim().length < 2) {
       setResults([]);
       return;
     }
+
     setLoading(true);
     try {
+      // Get Firebase ID token so search-service auth passes
+      const fbUser = firebaseUser ?? user ?? null;
+      const token = fbUser ? await fbUser.getIdToken() : null;
+
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ q: query, courseId, type, topK }),
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Search failed:', response.status, text);
+        setResults([]);
+        return;
+      }
+
       const data = await response.json();
-      setResults(data.results);
+      setResults(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
       console.error('Search failed:', error);
+      setResults([]);
     } finally {
       setLoading(false);
     }
