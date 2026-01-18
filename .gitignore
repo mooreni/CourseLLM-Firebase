@@ -59,3 +59,5 @@ src/dataconnect-admin-generated/
 **/__pycache__/**
 __pycache__
 *.pyc
+
+serviceAccountKey.json

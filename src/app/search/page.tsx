@@ -33,6 +33,13 @@ export default function SearchPage() {
 
   const handleSearch = async () => {
     if (query.trim().length < 2) {
+      console.warn('⚠️ Query too short');
+      setResults([]);
+      return;
+    }
+
+    if (!courseId.trim()) {
+      console.error('❌ courseId is required');
       setResults([]);
       return;
     }
@@ -43,6 +50,8 @@ export default function SearchPage() {
       const fbUser = firebaseUser ?? user ?? null;
       const token = fbUser ? await fbUser.getIdToken() : null;
 
+      console.log('📤 Sending search request:', { q: query, courseId, type, topK });
+
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: {
@@ -52,17 +61,20 @@ export default function SearchPage() {
         body: JSON.stringify({ q: query, courseId, type, topK }),
       });
 
+      console.log('📥 Response:', { status: response.status }, 'token =', token);
+
       if (!response.ok) {
         const text = await response.text();
-        console.error('Search failed:', response.status, text);
+        console.error('❌ Search failed:', response.status, text);
         setResults([]);
         return;
       }
 
       const data = await response.json();
+      console.log('✅ Search results:', data);
       setResults(Array.isArray(data?.results) ? data.results : []);
     } catch (error) {
-      console.error('Search failed:', error);
+      console.error('❌ Search error:', error);
       setResults([]);
     } finally {
       setLoading(false);

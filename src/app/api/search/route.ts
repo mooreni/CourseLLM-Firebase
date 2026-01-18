@@ -28,8 +28,11 @@ export async function POST(req: NextRequest) {
     // Forward auth if present (later you can remove TEST_AUTH_BYPASS and this will matter)
     const authHeader = req.headers.get("authorization");
 
+    const searchUrl = `${baseUrl}/v1/courses/${encodeURIComponent(courseId)}/documents:search`;
+    console.log("🔍 Search request:", { searchUrl, query: q, courseId, authHeader: !!authHeader });
+
     const r = await fetch(
-      `${baseUrl}/v1/courses/${encodeURIComponent(courseId)}/documents:search`,
+      searchUrl,
       {
         method: "POST",
         headers: {
@@ -44,8 +47,11 @@ export async function POST(req: NextRequest) {
       }
     );
 
+    console.log("🔙 Search response:", { status: r.status, ok: r.ok });
+
     if (!r.ok) {
       const text = await r.text();
+      console.error("❌ Search failed:", { status: r.status, detail: text });
       return NextResponse.json(
         { error: `search-service error ${r.status}`, detail: text },
         { status: 502 }
@@ -74,6 +80,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (e: any) {
+    console.error("❌ API error:", e);
     return NextResponse.json(
       { error: "Invalid request", detail: String(e?.message ?? e) },
       { status: 400 }

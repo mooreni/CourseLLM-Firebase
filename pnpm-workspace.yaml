@@ -1,6 +1,12 @@
 packages:
-  - '.'
+  - .
+
+onlyBuiltDependencies:
+  - '@firebase/util'
+  - esbuild
+  - protobufjs
+  - sharp
 
 overrides:
-  '@dataconnect/generated': link:src/dataconnect-generated
   '@dataconnect/admin-generated': link:src/dataconnect-admin-generated
+  '@dataconnect/generated': link:src/dataconnect-generated
